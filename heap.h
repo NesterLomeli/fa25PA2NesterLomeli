@@ -7,39 +7,41 @@
 
 #include <string>
 
-// ===== Shared capacity across files =====
+// just a simple cap for how many nodes we might have
+// 26 letters -> at most 2*26-1 nodes, so 128 is plenty
 #ifndef MAX_NODES
-#define MAX_NODES 128   // Enough for <= 2*26-1 nodes; raise if you need.
+#define MAX_NODES 128
 #endif
 
-// Compares node indices by referring to this global array.
-// DEFINED in main.cpp and DECLARED here.
+// weights live in main.cpp; heap only stores indices into those arrays
 extern int weightArr[MAX_NODES];
 
-// ===== Array-based min-heap storing NODE INDICES =====
+// basic array-based min-heap storing NODE INDICES (not weights directly)
 struct MinHeap {
-    int data[MAX_NODES];
-    int size;
+    int data[MAX_NODES]; // holds indices to the node arrays
+    int size;            // how many items are in the heap
 
     MinHeap() : size(0) {}
 
     bool empty() const { return size == 0; }
     int  getSize() const { return size; }
 
+    // tiny swap helper
     void swapIdx(int i, int j) {
         int t = data[i];
         data[i] = data[j];
         data[j] = t;
     }
 
-    // Compare two heap positions by node weights (tie-break on index for stability)
+    // compare two heap positions using their node weights
+    // if tie, break by index so it’s stable
     bool lessAt(int i, int j) const {
         int a = data[i], b = data[j];
         if (weightArr[a] != weightArr[b]) return weightArr[a] < weightArr[b];
         return a < b;
     }
 
-    // TODO [Ness-PA2-Heap-01]: Bubble the new node up until heap property holds.
+    // move a new item up until heap property is good
     void upheap(int i) {
         while (i > 0) {
             int p = (i - 1) / 2;
@@ -49,7 +51,7 @@ struct MinHeap {
         }
     }
 
-    // TODO [Ness-PA2-Heap-02]: Sift the root down after pop to restore order.
+    // push the root down after a pop to restore order
     void downheap(int i) {
         while (true) {
             int l = 2 * i + 1;
@@ -65,14 +67,14 @@ struct MinHeap {
         }
     }
 
-    // TODO [Ness-PA2-Heap-03]: Insert new node index, then upheap.
+    // insert a node index and fix the heap
     void push(int nodeIdx) {
         data[size] = nodeIdx;
         size++;
         upheap(size - 1);
     }
 
-    // TODO [Ness-PA2-Heap-04]: Remove min (root), move last to root, then downheap.
+    // pop the smallest (root), move last to root, then sift down
     int pop() {
         int ret = data[0];
         data[0] = data[size - 1];
@@ -81,7 +83,7 @@ struct MinHeap {
         return ret;
     }
 
-    int top() const { return data[0]; }
+    int top() const { return data[0]; } // just peek (not used here but nice to have)
 };
 
 #endif // MIN_HEAP_H
