@@ -6,127 +6,202 @@
 #include <stack>
 #include <string>
 #include "heap.h"
+
 using namespace std;
 
-// Global arrays for node information
-const int MAX_NODES = 64;
-int weightArr[MAX_NODES];
-int leftArr[MAX_NODES];
-int rightArr[MAX_NODES];
-char charArr[MAX_NODES];
+// ====== Global node arrays (parallel arrays) ======
+int  weightArr[MAX_NODES];
+int  leftArr[MAX_NODES];
+int  rightArr[MAX_NODES];
+char charArr[MAX_NODES];   // valid letter at leaves; '#' (or '\0') for internals
 
-// Function prototypes
-void buildFrequencyTable(int freq[], const string& filename);
-int createLeafNodes(int freq[]);
-int buildEncodingTree(int nextFree);
-void generateCodes(int root, string codes[]);
-void encodeMessage(const string& filename, string codes[]);
-
-int main() {
-    int freq[26] = {0};
-
-    // Step 1: Read file and count letter frequencies
-    buildFrequencyTable(freq, "input.txt");
-
-    // Step 2: Create leaf nodes for each character with nonzero frequency
-    int nextFree = createLeafNodes(freq);
-
-    // Step 3: Build encoding tree using your heap
-    int root = buildEncodingTree(nextFree);
-
-    // Step 4: Generate binary codes using an STL stack
-    string codes[26];
-    generateCodes(root, codes);
-
-    // Step 5: Encode the message and print output
-    encodeMessage("input.txt", codes);
-
-    return 0;
+// ====== Helpers ======
+static inline bool isUpper(char c) { return (c >= 'A' && c <= 'Z'); }
+static inline bool isLower(char c) { return (c >= 'a' && c <= 'z'); }
+static inline char toLowerFast(char c) {
+    if (isUpper(c)) return char(c - 'A' + 'a');
+    return c;
 }
 
-/*------------------------------------------------------
-    Function Definitions (Students will complete logic)
-  ------------------------------------------------------*/
+// 1) Read file and compute lowercase a-z frequency
+// TODO [Ness-PA2-Freq-01]: Normalize to lowercase; ignore non-letters per spec.
+void buildFrequency(const string& filename, int freq[26]) {
+    for (int i = 0; i < 26; ++i) freq[i] = 0;
 
-// Step 1: Read file and count frequencies
-void buildFrequencyTable(int freq[], const string& filename) {
-    ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Error: could not open " << filename << "\n";
-        exit(1);
+    ifstream fin(filename.c_str());
+    if (!fin) {
+        cout << "Failed to open input file: " << filename << "\n";
+        return;
     }
-
-    char ch;
-    while (file.get(ch)) {
-        // Convert uppercase to lowercase
-        if (ch >= 'A' && ch <= 'Z')
-            ch = ch - 'A' + 'a';
-
-        // Count only lowercase letters
-        if (ch >= 'a' && ch <= 'z')
-            freq[ch - 'a']++;
+    char c;
+    while (fin.get(c)) {
+        c = toLowerFast(c);
+        if (isLower(c)) freq[c - 'a']++;
     }
-    file.close();
-
-    cout << "Frequency table built successfully.\n";
+    fin.close();
 }
 
-// Step 2: Create leaf nodes for each character
-int createLeafNodes(int freq[]) {
+// 2) Create leaf nodes for nonzero freqs. Returns nextFree = number of nodes used so far.
+// TODO [Ness-PA2-Nodes-01]: Each nonzero frequency becomes a leaf; internals use '#'.
+int createLeafNodes(const int freq[26]) {
     int nextFree = 0;
+    for (int i = 0; i < MAX_NODES; ++i) {
+        weightArr[i] = 0;
+        leftArr[i] = -1;
+        rightArr[i] = -1;
+        charArr[i] = '\0';
+    }
+
     for (int i = 0; i < 26; ++i) {
         if (freq[i] > 0) {
-            charArr[nextFree] = 'a' + i;
+            charArr[nextFree] = char('a' + i);
             weightArr[nextFree] = freq[i];
             leftArr[nextFree] = -1;
             rightArr[nextFree] = -1;
             nextFree++;
+            if (nextFree >= MAX_NODES) break; // safety guard
         }
     }
-    cout << "Created " << nextFree << " leaf nodes.\n";
     return nextFree;
 }
 
-// Step 3: Build the encoding tree using heap operations
+// 3) Build the Huffman-like encoding tree using our array heap; return root index
+// TODO [Ness-PA2-Tree-01]: Repeatedly pop two mins, create parent, push back, until one root remains.
 int buildEncodingTree(int nextFree) {
-    // TODO:
-    // 1. Create a MinHeap object.
-    // 2. Push all leaf node indices into the heap.
-    // 3. While the heap size is greater than 1:
-    //    - Pop two smallest nodes
-    //    - Create a new parent node with combined weight
-    //    - Set left/right pointers
-    //    - Push new parent index back into the heap
-    // 4. Return the index of the last remaining node (root)
-    return -1; // placeholder
+    MinHeap heap;
+
+    // Push leaves into heap
+    for (int i = 0; i < nextFree; ++i) {
+        heap.push(i);
+    }
+
+    // Edge case: no symbols
+    if (heap.getSize() == 0) {
+        return -1;
+    }
+
+    // Edge case: only one symbol → tree is just that leaf
+    if (heap.getSize() == 1) {
+        return heap.pop();
+    }
+
+    int curr = nextFree; // next available slot for internal nodes
+
+    while (heap.getSize() > 1 && curr < MAX_NODES) {
+        int a = heap.pop();
+        int b = heap.pop();
+
+        // Create parent
+        leftArr[curr] = a;
+        rightArr[curr] = b;
+        charArr[curr] = '#'; // internal
+        weightArr[curr] = weightArr[a] + weightArr[b];
+
+        heap.push(curr);
+        curr++;
+    }
+
+    if (heap.getSize() == 1) {
+        return heap.pop();
+    }
+    // Fallback (shouldn't happen with valid input sizes)
+    return -1;
 }
 
-// Step 4: Use an STL stack to generate codes
-void generateCodes(int root, string codes[]) {
-    // TODO:
-    // Use stack<pair<int, string>> to simulate DFS traversal.
-    // Left edge adds '0', right edge adds '1'.
-    // Record code when a leaf node is reached.
+// 4) Iterative traversal to generate codes (no recursion)
+// TODO [Ness-PA2-Codes-01]: Use stack frames {node, path}; left = '0', right = '1'.
+// TODO [Ness-PA2-Codes-02]: Single-symbol input must still get a code (use "0").
+void generateCodes(int root, string codes[26]) {
+    for (int i = 0; i < 26; ++i) codes[i].clear();
+    if (root < 0) return;
+
+    struct Item {
+        int node;
+        string path;
+    };
+
+    stack<Item> st;
+    st.push({root, ""});
+
+    while (!st.empty()) {
+        Item cur = st.top();
+        st.pop();
+
+        int n = cur.node;
+        int L = leftArr[n];
+        int R = rightArr[n];
+
+        bool isLeaf = (L == -1 && R == -1);
+
+        if (isLeaf) {
+            char ch = charArr[n];
+            if (ch >= 'a' && ch <= 'z') {
+                // Handle single-symbol input: assign "0" if path is empty
+                if (cur.path.empty()) codes[ch - 'a'] = "0";
+                else codes[ch - 'a'] = cur.path;
+            }
+        } else {
+            // Push right first so left is processed first (optional order)
+            if (R != -1) st.push({R, cur.path + "1"});
+            if (L != -1) st.push({L, cur.path + "0"});
+        }
+    }
 }
 
-// Step 5: Print table and encoded message
-void encodeMessage(const string& filename, string codes[]) {
-    cout << "\nCharacter : Code\n";
+// 5) Print code table and encoded message
+// TODO [Ness-PA2-Output-01]: First print Character:Code pairs, then the bitstring.
+// TODO [Ness-PA2-Output-02]: Ignore non-letters when emitting encoded bits.
+void encodeMessage(const string& filename, string codes[26]) {
+    cout << "Character : Code\n";
     for (int i = 0; i < 26; ++i) {
-        if (!codes[i].empty())
+        if (!codes[i].empty()) {
             cout << char('a' + i) << " : " << codes[i] << "\n";
+        }
     }
 
     cout << "\nEncoded message:\n";
-
-    ifstream file(filename);
-    char ch;
-    while (file.get(ch)) {
-        if (ch >= 'A' && ch <= 'Z')
-            ch = ch - 'A' + 'a';
-        if (ch >= 'a' && ch <= 'z')
-            cout << codes[ch - 'a'];
+    ifstream fin(filename.c_str());
+    if (!fin) {
+        cout << "Failed to open input file: " << filename << "\n";
+        return;
     }
+    char c;
+    while (fin.get(c)) {
+        c = toLowerFast(c);
+        if (isLower(c)) {
+            const string& bitstr = codes[c - 'a'];
+            if (!bitstr.empty()) cout << bitstr;
+        }
+        // Non-letters are ignored for encoding
+    }
+    fin.close();
     cout << "\n";
-    file.close();
+}
+
+int main() {
+    const string filename = "input.txt";
+
+    // Step 1: frequency
+    int freq[26];
+    buildFrequency(filename, freq);
+
+    // Step 2: leaf nodes
+    int nextFree = createLeafNodes(freq);
+
+    if (nextFree == 0) {
+        cout << "No lowercase letters found in input. Nothing to encode.\n";
+        return 0;
+    }
+
+    // Step 3: build encoding tree
+    int root = buildEncodingTree(nextFree);
+
+    // Step 4: iterative traversal to assign codes
+    string codes[26];
+    generateCodes(root, codes);
+
+    // Step 5: print table and encoded message
+    encodeMessage(filename, codes);
+
+    return 0;
 }
